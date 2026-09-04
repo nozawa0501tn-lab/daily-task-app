@@ -1,0 +1,595 @@
+(function () {
+  "use strict";
+
+  const STORAGE_KEY = "dailyTaskApp_v1";
+  const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
+  const DEFAULT_LABELS = [
+    { name: "勉強", color: "#3b82f6" },
+    { name: "筋トレ", color: "#f97316" },
+    { name: "家事", color: "#10b981" }
+  ];
+  const COLOR_PALETTE = [
+    "#3b82f6", "#f97316", "#10b981", "#8b5cf6", "#ec4899",
+    "#14b8a6", "#ef4444", "#eab308", "#6366f1", "#06b6d4"
+  ];
+  const RING_CIRCUMFERENCE = 326.7256;
+
+  /** @type {{tasks: Array, records: Object, labels: Array}} */
+  let state = loadState();
+  let editingTaskId = null;
+
+  function loadState() {
+    let loaded = { tasks: [], records: {}, labels: [] };
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.tasks) && parsed.records) {
+          loaded = parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load state", e);
+    }
+    return normalizeState(loaded);
+  }
+
+  // Ensures state.labels exists and contains every label already used by a task
+  // (covers backups/state saved before label management existed).
+  function normalizeState(loaded) {
+    if (!Array.isArray(loaded.labels) || loaded.labels.length === 0) {
+      loaded.labels = DEFAULT_LABELS.map((l) => ({ ...l }));
+    }
+    loaded.tasks.forEach((t) => {
+      if (t.label && !loaded.labels.some((l) => l.name === t.label)) {
+        loaded.labels.push({ name: t.label, color: nextPaletteColor(loaded.labels) });
+      }
+    });
+    return loaded;
+  }
+
+  function nextPaletteColor(labels) {
+    const used = labels.map((l) => l.color);
+    const unused = COLOR_PALETTE.find((c) => !used.includes(c));
+    return unused || COLOR_PALETTE[labels.length % COLOR_PALETTE.length];
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function isoToDate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function dateToISO(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function addDaysISO(iso, days) {
+    const d = isoToDate(iso);
+    d.setDate(d.getDate() + days);
+    return dateToISO(d);
+  }
+
+  function addWeeksISO(iso, weeks) {
+    return addDaysISO(iso, weeks * 7);
+  }
+
+  function labelColor(labelName) {
+    const found = state.labels.find((l) => l.name === labelName);
+    return found ? found.color : "#8b5cf6";
+  }
+
+  function addLabel(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = state.labels.find((l) => l.name === trimmed);
+    if (existing) return existing;
+    const label = { name: trimmed, color: nextPaletteColor(state.labels) };
+    state.labels.push(label);
+    saveState();
+    return label;
+  }
+
+  function deleteLabel(name) {
+    if (state.tasks.some((t) => t.label === name)) {
+      alert("このラベルは使用中のタスクがあるため削除できません。先にタスクのラベルを変更するか、タスクを削除してください。");
+      return;
+    }
+    if (!confirm(`ラベル「${name}」を削除しますか?`)) return;
+    state.labels = state.labels.filter((l) => l.name !== name);
+    saveState();
+    renderLabelUI();
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function getRecord(iso) {
+    if (!state.records[iso]) {
+      state.records[iso] = { completed: [], total: 0, grade: null };
+    }
+    return state.records[iso];
+  }
+
+  function tasksForDate(iso) {
+    const dow = isoToDate(iso).getDay();
+    return state.tasks.filter((t) => {
+      if (t.type === "weekday") return t.days.includes(dow);
+      // 単体タスク: 期日以降は完了するまで毎日持ち越される。完了した当日だけは
+      // チェック済みの状態で表示するため doneDate === iso も対象に含める。
+      if (t.type === "date") return (!t.done && t.date <= iso) || t.doneDate === iso;
+      // 数週間ごとの繰り返しタスク: 次回期日が来たら表示し、完了すると期日を
+      // 間隔ぶん先に進める。完了した当日だけはチェック済みで表示する。
+      if (t.type === "interval") return t.dueDate <= iso || t.lastCompletedDate === iso;
+      return false;
+    });
+  }
+
+  function somedayTasks() {
+    return state.tasks.filter((t) => t.type === "someday" && !t.done);
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+      if (btn.dataset.tab === "manage") {
+        renderLabelUI();
+        renderManageList();
+      }
+      if (btn.dataset.tab === "history") renderHistory();
+    });
+  });
+
+  // ---------- Today tab ----------
+  function renderToday() {
+    const iso = todayISO();
+    const dateObj = isoToDate(iso);
+    document.getElementById("todayDateLabel").textContent =
+      `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日 (${WEEKDAY_NAMES[dateObj.getDay()]})`;
+
+    const dayTasks = tasksForDate(iso);
+    const record = getRecord(iso);
+    record.total = dayTasks.length;
+    record.completed = record.completed.filter((id) => dayTasks.some((t) => t.id === id));
+
+    // Today task list
+    const list = document.getElementById("todayTaskList");
+    list.innerHTML = "";
+    dayTasks.forEach((t) => list.appendChild(renderTaskRow(t, record.completed.includes(t.id), () => toggleTodayTask(t.id))));
+    document.getElementById("todayEmptyMsg").hidden = dayTasks.length > 0;
+
+    // Someday task list
+    const sList = document.getElementById("somedayTaskList");
+    sList.innerHTML = "";
+    const sTasks = somedayTasks();
+    sTasks.forEach((t) => sList.appendChild(renderTaskRow(t, false, () => completeSomedayTask(t.id))));
+    document.getElementById("somedayEmptyMsg").hidden = sTasks.length > 0;
+
+    // Progress
+    const pct = record.total === 0 ? 0 : Math.round((record.completed.length / record.total) * 100);
+    document.getElementById("progressPercentText").textContent = pct + "%";
+    document.getElementById("progressCountText").textContent = `${record.completed.length} / ${record.total} 完了`;
+    const fg = document.getElementById("progressRingFg");
+    fg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
+
+    // Grade buttons
+    document.querySelectorAll(".grade-btn").forEach((b) => {
+      b.classList.toggle("selected", b.dataset.grade === record.grade);
+    });
+
+    saveState();
+  }
+
+  function renderTaskRow(task, checked, onToggle) {
+    const li = document.createElement("li");
+    li.className = "task-item" + (checked ? " done" : "");
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "task-checkbox";
+    cb.checked = checked;
+    cb.addEventListener("change", onToggle);
+    li.appendChild(cb);
+
+    const name = document.createElement("span");
+    name.className = "task-name";
+    name.textContent = task.name;
+    li.appendChild(name);
+
+    const chip = document.createElement("span");
+    chip.className = "task-label-chip";
+    chip.style.background = labelColor(task.label);
+    chip.textContent = task.label;
+    li.appendChild(chip);
+
+    return li;
+  }
+
+  function toggleTodayTask(taskId) {
+    const iso = todayISO();
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const record = getRecord(iso);
+    const idx = record.completed.indexOf(taskId);
+    const completing = idx < 0;
+
+    if (task.type === "date") {
+      task.done = completing;
+      task.doneDate = completing ? iso : null;
+    } else if (task.type === "interval") {
+      if (completing) {
+        task.previousDueDate = task.dueDate;
+        task.lastCompletedDate = iso;
+        task.dueDate = addWeeksISO(iso, task.intervalWeeks);
+      } else {
+        task.dueDate = task.previousDueDate || task.dueDate;
+        task.lastCompletedDate = null;
+        task.previousDueDate = null;
+      }
+    }
+
+    if (completing) record.completed.push(taskId);
+    else record.completed.splice(idx, 1);
+    renderToday();
+  }
+
+  function completeSomedayTask(taskId) {
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    task.done = true;
+    task.doneDate = todayISO();
+    saveState();
+    renderToday();
+  }
+
+  document.getElementById("gradeButtons").addEventListener("click", (e) => {
+    const btn = e.target.closest(".grade-btn");
+    if (!btn) return;
+    const iso = todayISO();
+    const record = getRecord(iso);
+    record.grade = record.grade === btn.dataset.grade ? null : btn.dataset.grade;
+    renderToday();
+  });
+
+  // ---------- Manage tab: labels ----------
+  const labelForm = document.getElementById("labelForm");
+  const taskLabelSelect = document.getElementById("taskLabel");
+
+  labelForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("newLabelName");
+    const label = addLabel(input.value);
+    if (label) {
+      input.value = "";
+      renderLabelUI();
+      taskLabelSelect.value = label.name;
+    }
+  });
+
+  function renderLabelUI() {
+    const chipList = document.getElementById("labelChipList");
+    chipList.innerHTML = "";
+    state.labels.forEach((l) => {
+      const li = document.createElement("li");
+      li.className = "label-chip";
+      li.style.background = l.color;
+      const span = document.createElement("span");
+      span.textContent = l.name;
+      li.appendChild(span);
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.textContent = "×";
+      delBtn.title = `「${l.name}」を削除`;
+      delBtn.addEventListener("click", () => deleteLabel(l.name));
+      li.appendChild(delBtn);
+      chipList.appendChild(li);
+    });
+
+    const previousValue = taskLabelSelect.value;
+    taskLabelSelect.innerHTML = "";
+    state.labels.forEach((l) => {
+      const opt = document.createElement("option");
+      opt.value = l.name;
+      opt.textContent = l.name;
+      taskLabelSelect.appendChild(opt);
+    });
+    if (state.labels.some((l) => l.name === previousValue)) {
+      taskLabelSelect.value = previousValue;
+    }
+  }
+
+  // ---------- Manage tab: tasks ----------
+  const taskForm = document.getElementById("taskForm");
+  const weekdayPicker = document.getElementById("weekdayPicker");
+  const datePicker = document.getElementById("datePicker");
+  const intervalPicker = document.getElementById("intervalPicker");
+
+  taskForm.querySelectorAll('input[name="taskType"]').forEach((radio) => {
+    radio.addEventListener("change", updateFormVisibility);
+  });
+
+  function updateFormVisibility() {
+    const type = taskForm.querySelector('input[name="taskType"]:checked').value;
+    weekdayPicker.hidden = type !== "weekday";
+    datePicker.hidden = type !== "date";
+    intervalPicker.hidden = type !== "interval";
+    const dueDateInput = document.getElementById("taskIntervalDueDate");
+    if (type === "interval" && !dueDateInput.value) {
+      dueDateInput.value = todayISO();
+    }
+  }
+
+  taskForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("taskName").value.trim();
+    const label = document.getElementById("taskLabel").value.trim();
+    const type = taskForm.querySelector('input[name="taskType"]:checked').value;
+    if (!name || !label) return;
+
+    let days = [];
+    let date = "";
+    let intervalWeeks = null;
+    let dueDate = "";
+    if (type === "weekday") {
+      days = Array.from(weekdayPicker.querySelectorAll('input[type="checkbox"]:checked')).map((c) => Number(c.value));
+      if (days.length === 0) {
+        alert("曜日を1つ以上選択してください。");
+        return;
+      }
+    } else if (type === "date") {
+      date = document.getElementById("taskDate").value;
+      if (!date) {
+        alert("日付を選択してください。");
+        return;
+      }
+    } else if (type === "interval") {
+      intervalWeeks = Number(document.getElementById("taskIntervalWeeks").value);
+      dueDate = document.getElementById("taskIntervalDueDate").value;
+      if (!intervalWeeks || intervalWeeks < 1) {
+        alert("間隔は1週間以上で指定してください。");
+        return;
+      }
+      if (!dueDate) {
+        alert("次回の期日を選択してください。");
+        return;
+      }
+    }
+
+    if (editingTaskId) {
+      const task = state.tasks.find((t) => t.id === editingTaskId);
+      Object.assign(task, { name, label, type, days, date });
+      if (type === "interval") Object.assign(task, { intervalWeeks, dueDate });
+      editingTaskId = null;
+    } else {
+      state.tasks.push({
+        id: uid(),
+        name,
+        label,
+        type,
+        days,
+        date,
+        intervalWeeks,
+        dueDate,
+        lastCompletedDate: null,
+        previousDueDate: null,
+        done: false,
+        doneDate: null,
+        createdAt: todayISO()
+      });
+    }
+
+    resetForm();
+    saveState();
+    renderManageList();
+    renderToday();
+  });
+
+  document.getElementById("cancelEditBtn").addEventListener("click", resetForm);
+
+  function resetForm() {
+    taskForm.reset();
+    editingTaskId = null;
+    document.getElementById("formTitle").textContent = "タスクを追加";
+    document.getElementById("submitBtn").textContent = "追加";
+    document.getElementById("cancelEditBtn").hidden = true;
+    updateFormVisibility();
+  }
+
+  function startEditTask(taskId) {
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    editingTaskId = taskId;
+    document.getElementById("taskName").value = task.name;
+    document.getElementById("taskLabel").value = task.label;
+    taskForm.querySelector(`input[name="taskType"][value="${task.type}"]`).checked = true;
+    updateFormVisibility();
+    weekdayPicker.querySelectorAll('input[type="checkbox"]').forEach((c) => {
+      c.checked = task.days.includes(Number(c.value));
+    });
+    document.getElementById("taskDate").value = task.date || "";
+    document.getElementById("taskIntervalWeeks").value = task.intervalWeeks || 2;
+    document.getElementById("taskIntervalDueDate").value = task.dueDate || "";
+    document.getElementById("formTitle").textContent = "タスクを編集";
+    document.getElementById("submitBtn").textContent = "更新";
+    document.getElementById("cancelEditBtn").hidden = false;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function deleteTask(taskId) {
+    if (!confirm("このタスクを削除しますか?")) return;
+    state.tasks = state.tasks.filter((t) => t.id !== taskId);
+    if (editingTaskId === taskId) resetForm();
+    saveState();
+    renderManageList();
+    renderToday();
+  }
+
+  function renderManageList() {
+    const list = document.getElementById("manageTaskList");
+    list.innerHTML = "";
+    state.tasks.forEach((task) => {
+      const li = document.createElement("li");
+      li.className = "task-item" + (task.done ? " done" : "");
+
+      const name = document.createElement("span");
+      name.className = "task-name";
+      name.textContent = task.name;
+      li.appendChild(name);
+
+      const chip = document.createElement("span");
+      chip.className = "task-label-chip";
+      chip.style.background = labelColor(task.label);
+      chip.textContent = task.label;
+      li.appendChild(chip);
+
+      const meta = document.createElement("span");
+      meta.className = "task-meta";
+      if (task.type === "weekday") {
+        meta.textContent = task.days.map((d) => WEEKDAY_NAMES[d]).join("・");
+      } else if (task.type === "date") {
+        meta.textContent = task.done
+          ? `完了 (${task.doneDate})`
+          : task.date < todayISO()
+          ? `${task.date} (未完了・持ち越し中)`
+          : task.date;
+      } else if (task.type === "interval") {
+        meta.textContent = `${task.intervalWeeks}週間ごと・次回 ${task.dueDate}`;
+      } else {
+        meta.textContent = task.done ? `完了 (${task.doneDate})` : "いつかやる";
+      }
+      li.appendChild(meta);
+
+      const actions = document.createElement("span");
+      actions.className = "task-actions";
+
+      if ((task.type === "someday" || task.type === "date") && task.done) {
+        const undoBtn = document.createElement("button");
+        undoBtn.textContent = "未完了に戻す";
+        undoBtn.addEventListener("click", () => {
+          task.done = false;
+          task.doneDate = null;
+          saveState();
+          renderManageList();
+          renderToday();
+        });
+        actions.appendChild(undoBtn);
+      }
+
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "編集";
+      editBtn.addEventListener("click", () => startEditTask(task.id));
+      actions.appendChild(editBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "削除";
+      delBtn.className = "delete-btn";
+      delBtn.addEventListener("click", () => deleteTask(task.id));
+      actions.appendChild(delBtn);
+
+      li.appendChild(actions);
+      list.appendChild(li);
+    });
+    document.getElementById("manageEmptyMsg").hidden = state.tasks.length > 0;
+  }
+
+  // ---------- History tab ----------
+  function renderHistory() {
+    const tbody = document.getElementById("historyTableBody");
+    tbody.innerHTML = "";
+    const dates = Object.keys(state.records).sort((a, b) => (a < b ? 1 : -1));
+    dates.forEach((iso) => {
+      const record = state.records[iso];
+      if (record.total === 0 && !record.grade) return;
+      const tr = document.createElement("tr");
+
+      const dateTd = document.createElement("td");
+      dateTd.textContent = iso;
+      tr.appendChild(dateTd);
+
+      const dowTd = document.createElement("td");
+      dowTd.textContent = WEEKDAY_NAMES[isoToDate(iso).getDay()];
+      tr.appendChild(dowTd);
+
+      const pctTd = document.createElement("td");
+      const pct = record.total === 0 ? 0 : Math.round((record.completed.length / record.total) * 100);
+      pctTd.textContent = `${pct}% (${record.completed.length}/${record.total})`;
+      tr.appendChild(pctTd);
+
+      const gradeTd = document.createElement("td");
+      if (record.grade) {
+        const pill = document.createElement("span");
+        pill.className = "grade-pill";
+        pill.textContent = record.grade;
+        gradeTd.appendChild(pill);
+      } else {
+        gradeTd.textContent = "-";
+      }
+      tr.appendChild(gradeTd);
+
+      tbody.appendChild(tr);
+    });
+    document.getElementById("historyEmptyMsg").hidden = tbody.children.length > 0;
+  }
+
+  // ---------- Backup ----------
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `daily-task-app-backup-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("importInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || !Array.isArray(parsed.tasks) || !parsed.records) {
+          throw new Error("invalid format");
+        }
+        if (!confirm("現在のデータを上書きしてインポートしますか?")) return;
+        state = normalizeState(parsed);
+        saveState();
+        renderLabelUI();
+        renderManageList();
+        renderToday();
+        renderHistory();
+      } catch (err) {
+        alert("インポートに失敗しました。ファイルの形式を確認してください。");
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  });
+
+  // ---------- Init ----------
+  updateFormVisibility();
+  renderLabelUI();
+  renderToday();
+})();

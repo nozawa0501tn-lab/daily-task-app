@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>デイリータスク管理</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>デイリータスク管理</h1>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="today">今日</button>
+    <button class="tab-btn" data-tab="manage">タスク管理</button>
+    <button class="tab-btn" data-tab="history">履歴</button>
+  </nav>
+</header>
+
+<main>
+  <!-- 今日タブ -->
+  <section id="tab-today" class="tab-panel active">
+    <div class="today-date" id="todayDateLabel"></div>
+
+    <div class="progress-card">
+      <div class="progress-ring-wrap">
+        <svg class="progress-ring" width="120" height="120" viewBox="0 0 120 120">
+          <circle class="progress-ring-bg" cx="60" cy="60" r="52"></circle>
+          <circle class="progress-ring-fg" id="progressRingFg" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="progress-ring-text" id="progressPercentText">0%</div>
+      </div>
+      <div class="progress-info">
+        <div id="progressCountText">0 / 0 完了</div>
+        <div class="grade-row">
+          <span class="grade-label">今日の評価:</span>
+          <div class="grade-buttons" id="gradeButtons">
+            <button class="grade-btn" data-grade="A">A</button>
+            <button class="grade-btn" data-grade="B">B</button>
+            <button class="grade-btn" data-grade="C">C</button>
+            <button class="grade-btn" data-grade="D">D</button>
+            <button class="grade-btn" data-grade="E">E</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="task-section">
+      <h2>今日のタスク</h2>
+      <ul class="task-list" id="todayTaskList"></ul>
+      <p class="empty-msg" id="todayEmptyMsg" hidden>今日のタスクはありません。「タスク管理」から追加してください。</p>
+    </div>
+
+    <div class="task-section">
+      <h2>いつかやる <span class="section-note">(進捗率には含まれません)</span></h2>
+      <ul class="task-list" id="somedayTaskList"></ul>
+      <p class="empty-msg" id="somedayEmptyMsg" hidden>「いつかやる」タスクはありません。</p>
+    </div>
+  </section>
+
+  <!-- タスク管理タブ -->
+  <section id="tab-manage" class="tab-panel">
+    <h2>ラベル管理</h2>
+    <form id="labelForm" class="label-form">
+      <input type="text" id="newLabelName" placeholder="新しいラベル名 (例: 読書)" required>
+      <button type="submit">ラベルを追加</button>
+    </form>
+    <ul class="label-chip-list" id="labelChipList"></ul>
+
+    <h2 id="formTitle">タスクを追加</h2>
+    <form id="taskForm" class="task-form">
+      <div class="form-row">
+        <label for="taskName">タスク名</label>
+        <input type="text" id="taskName" required placeholder="例: 英単語10個暗記">
+      </div>
+
+      <div class="form-row">
+        <label for="taskLabel">ラベル</label>
+        <select id="taskLabel" required></select>
+      </div>
+
+      <div class="form-row">
+        <label>種類</label>
+        <div class="type-radio-group">
+          <label class="radio-inline"><input type="radio" name="taskType" value="weekday" checked> 曜日で繰り返す(習慣)</label>
+          <label class="radio-inline"><input type="radio" name="taskType" value="date"> 特定の日(単体)</label>
+          <label class="radio-inline"><input type="radio" name="taskType" value="interval"> 数週間ごとに繰り返す</label>
+          <label class="radio-inline"><input type="radio" name="taskType" value="someday"> いつかやる(期限なし)</label>
+        </div>
+      </div>
+
+      <div class="form-row" id="weekdayPicker">
+        <label>対象の曜日 <span class="section-note">(その曜日が来るたびに表示され、日が変わるとリセットされます)</span></label>
+        <div class="weekday-checks">
+          <label><input type="checkbox" value="0"> 日</label>
+          <label><input type="checkbox" value="1"> 月</label>
+          <label><input type="checkbox" value="2"> 火</label>
+          <label><input type="checkbox" value="3"> 水</label>
+          <label><input type="checkbox" value="4"> 木</label>
+          <label><input type="checkbox" value="5"> 金</label>
+          <label><input type="checkbox" value="6"> 土</label>
+        </div>
+      </div>
+
+      <div class="form-row" id="datePicker" hidden>
+        <label for="taskDate">日付 <span class="section-note">(未完了のまま日が変わると翌日以降に持ち越されます)</span></label>
+        <input type="date" id="taskDate">
+      </div>
+
+      <div class="form-row" id="intervalPicker" hidden>
+        <label>繰り返す間隔と次回の期日 <span class="section-note">(完了すると、完了日からこの間隔だけ先の日付で再び表示されます)</span></label>
+        <div class="interval-inputs">
+          <input type="number" id="taskIntervalWeeks" min="1" step="1" value="2"> 週間ごと ・ 次回:
+          <input type="date" id="taskIntervalDueDate">
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" id="submitBtn">追加</button>
+        <button type="button" id="cancelEditBtn" hidden>編集をキャンセル</button>
+      </div>
+    </form>
+
+    <h2>登録済みタスク一覧</h2>
+    <ul class="task-list manage-list" id="manageTaskList"></ul>
+    <p class="empty-msg" id="manageEmptyMsg" hidden>登録されているタスクはありません。</p>
+
+    <details class="backup-section">
+      <summary>データのバックアップ</summary>
+      <div class="backup-actions">
+        <button type="button" id="exportBtn">JSONをエクスポート</button>
+        <label class="import-label">
+          JSONをインポート
+          <input type="file" id="importInput" accept="application/json" hidden>
+        </label>
+      </div>
+    </details>
+  </section>
+
+  <!-- 履歴タブ -->
+  <section id="tab-history" class="tab-panel">
+    <h2>履歴</h2>
+    <table class="history-table">
+      <thead>
+        <tr><th>日付</th><th>曜日</th><th>進捗率</th><th>評価</th></tr>
+      </thead>
+      <tbody id="historyTableBody"></tbody>
+    </table>
+    <p class="empty-msg" id="historyEmptyMsg" hidden>まだ記録がありません。</p>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
