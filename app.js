@@ -1,3 +1,19 @@
+import { firebaseConfig } from "./firebase-config.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
 (function () {
   "use strict";
 
@@ -56,7 +72,104 @@
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (userDocRef && !applyingRemoteUpdate) {
+      setDoc(userDocRef, state).catch((e) => console.error("クラウドへの保存に失敗しました", e));
+    }
   }
+
+  // ---------- Firebase: auth + cross-device sync ----------
+  const fbApp = initializeApp(firebaseConfig);
+  const auth = getAuth(fbApp);
+  const db = getFirestore(fbApp);
+  let userDocRef = null;
+  let applyingRemoteUpdate = false;
+  let unsubscribeSnapshot = null;
+
+  function authErrorMessage(err) {
+    const map = {
+      "auth/invalid-email": "メールアドレスの形式が正しくありません。",
+      "auth/user-not-found": "ユーザーが見つかりません。",
+      "auth/wrong-password": "パスワードが違います。",
+      "auth/invalid-credential": "メールアドレスまたはパスワードが違います。",
+      "auth/email-already-in-use": "このメールアドレスは既に登録されています。",
+      "auth/weak-password": "パスワードは6文字以上にしてください。"
+    };
+    return map[err.code] || err.message;
+  }
+
+  document.getElementById("authForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("authEmail").value.trim();
+    const password = document.getElementById("authPassword").value;
+    const errorEl = document.getElementById("authError");
+    errorEl.hidden = true;
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      errorEl.textContent = "ログインに失敗しました: " + authErrorMessage(err);
+      errorEl.hidden = false;
+    }
+  });
+
+  document.getElementById("authSignUpBtn").addEventListener("click", async () => {
+    const email = document.getElementById("authEmail").value.trim();
+    const password = document.getElementById("authPassword").value;
+    const errorEl = document.getElementById("authError");
+    errorEl.hidden = true;
+    if (!email || !password) {
+      errorEl.textContent = "メールアドレスとパスワードを入力してください。";
+      errorEl.hidden = false;
+      return;
+    }
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      errorEl.textContent = "登録に失敗しました: " + authErrorMessage(err);
+      errorEl.hidden = false;
+    }
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+  onAuthStateChanged(auth, (user) => {
+    const authScreen = document.getElementById("authScreen");
+    const appRoot = document.getElementById("appRoot");
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+      unsubscribeSnapshot = null;
+    }
+
+    if (user) {
+      authScreen.hidden = true;
+      appRoot.hidden = false;
+      userDocRef = doc(db, "users", user.uid, "data", "state");
+      unsubscribeSnapshot = onSnapshot(
+        userDocRef,
+        (snap) => {
+          if (snap.exists()) {
+            applyingRemoteUpdate = true;
+            state = normalizeState(snap.data());
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            renderLabelUI();
+            renderManageList();
+            renderToday();
+            renderHistory();
+            applyingRemoteUpdate = false;
+          } else {
+            // 初回ログイン: ローカルの状態をクラウドの初期データとして保存する
+            setDoc(userDocRef, state);
+          }
+        },
+        (err) => console.error("クラウドとの同期に失敗しました", err)
+      );
+    } else {
+      userDocRef = null;
+      authScreen.hidden = false;
+      appRoot.hidden = true;
+      document.getElementById("authForm").reset();
+    }
+  });
 
   function todayISO() {
     const d = new Date();

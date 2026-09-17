@@ -5,10 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>デイリータスク管理</title>
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="タスク管理">
+<meta name="theme-color" content="#3b82f6">
 </head>
 <body>
+<div id="authScreen" class="auth-screen">
+  <form id="authForm" class="auth-card">
+    <h1>デイリータスク管理</h1>
+    <p class="section-note">このアプリ専用のメールアドレスとパスワードでログインしてください。初めての場合は「新規登録」でアカウントを作成できます。</p>
+    <div class="form-row">
+      <label for="authEmail">メールアドレス</label>
+      <input type="email" id="authEmail" required autocomplete="username">
+    </div>
+    <div class="form-row">
+      <label for="authPassword">パスワード(6文字以上)</label>
+      <input type="password" id="authPassword" required autocomplete="current-password" minlength="6">
+    </div>
+    <p class="auth-error" id="authError" hidden></p>
+    <div class="form-actions">
+      <button type="submit" id="authSignInBtn">ログイン</button>
+      <button type="button" id="authSignUpBtn">新規登録</button>
+    </div>
+  </form>
+</div>
+
+<div id="appRoot" hidden>
 <header class="app-header">
   <h1>デイリータスク管理</h1>
+  <button type="button" id="logoutBtn" class="logout-btn">ログアウト</button>
   <nav class="tabs">
     <button class="tab-btn active" data-tab="today">今日</button>
     <button class="tab-btn" data-tab="manage">タスク管理</button>
@@ -148,7 +175,8 @@
     <p class="empty-msg" id="historyEmptyMsg" hidden>まだ記録がありません。</p>
   </section>
 </main>
+</div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
