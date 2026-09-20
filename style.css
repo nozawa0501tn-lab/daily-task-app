@@ -321,6 +321,7 @@ main{
   background:var(--bg);
   color:var(--text);
 }
+.interval-inputs select,
 .interval-inputs input[type="date"]{
   padding:8px;
   border:1px solid var(--border);

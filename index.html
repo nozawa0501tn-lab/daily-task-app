@@ -111,7 +111,7 @@
         <div class="type-radio-group">
           <label class="radio-inline"><input type="radio" name="taskType" value="weekday" checked> 曜日で繰り返す(習慣)</label>
           <label class="radio-inline"><input type="radio" name="taskType" value="date"> 特定の日(単体)</label>
-          <label class="radio-inline"><input type="radio" name="taskType" value="interval"> 数週間ごとに繰り返す</label>
+          <label class="radio-inline"><input type="radio" name="taskType" value="interval"> 数日・数週間ごとに繰り返す</label>
           <label class="radio-inline"><input type="radio" name="taskType" value="someday"> いつかやる(期限なし)</label>
         </div>
       </div>
@@ -137,7 +137,8 @@
       <div class="form-row" id="intervalPicker" hidden>
         <label>繰り返す間隔と次回の期日 <span class="section-note">(完了すると、完了日からこの間隔だけ先の日付で再び表示されます)</span></label>
         <div class="interval-inputs">
-          <input type="number" id="taskIntervalWeeks" min="1" step="1" value="2"> 週間ごと ・ 次回:
+          <input type="number" id="taskIntervalWeeks" min="1" step="1" value="2">
+          <select id="taskIntervalUnit"><option value="days">日</option><option value="weeks" selected>週間</option></select> ごと ・ 次回:
           <input type="date" id="taskIntervalDueDate">
         </div>
       </div>

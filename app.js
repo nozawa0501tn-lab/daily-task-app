@@ -365,7 +365,7 @@ import {
       if (completing) {
         task.previousDueDate = task.dueDate;
         task.lastCompletedDate = iso;
-        task.dueDate = addWeeksISO(iso, task.intervalWeeks);
+        task.dueDate = addDaysISO(iso, task.intervalWeeks * (task.intervalUnit === "days" ? 1 : 7));
       } else {
         task.dueDate = task.previousDueDate || task.dueDate;
         task.lastCompletedDate = null;
@@ -473,7 +473,8 @@ import {
 
     let days = [];
     let date = "";
-    let intervalWeeks = null;
+    let intervalWeeks = null; // 間隔の数値(単位は intervalUnit。保存データ互換のため名前は据え置き)
+    let intervalUnit = "weeks";
     let dueDate = "";
     if (type === "weekday") {
       days = Array.from(weekdayPicker.querySelectorAll('input[type="checkbox"]:checked')).map((c) => Number(c.value));
@@ -490,8 +491,9 @@ import {
     } else if (type === "interval") {
       intervalWeeks = Number(document.getElementById("taskIntervalWeeks").value);
       dueDate = document.getElementById("taskIntervalDueDate").value;
+      intervalUnit = document.getElementById("taskIntervalUnit").value;
       if (!intervalWeeks || intervalWeeks < 1) {
-        alert("間隔は1週間以上で指定してください。");
+        alert("間隔は1以上で指定してください。");
         return;
       }
       if (!dueDate) {
@@ -503,7 +505,7 @@ import {
     if (editingTaskId) {
       const task = state.tasks.find((t) => t.id === editingTaskId);
       Object.assign(task, { name, label, type, days, date });
-      if (type === "interval") Object.assign(task, { intervalWeeks, dueDate });
+      if (type === "interval") Object.assign(task, { intervalWeeks, intervalUnit, dueDate });
       editingTaskId = null;
     } else {
       state.tasks.push({
@@ -514,6 +516,7 @@ import {
         days,
         date,
         intervalWeeks,
+        intervalUnit,
         dueDate,
         lastCompletedDate: null,
         previousDueDate: null,
@@ -553,6 +556,7 @@ import {
     });
     document.getElementById("taskDate").value = task.date || "";
     document.getElementById("taskIntervalWeeks").value = task.intervalWeeks || 2;
+    document.getElementById("taskIntervalUnit").value = task.intervalUnit || "weeks";
     document.getElementById("taskIntervalDueDate").value = task.dueDate || "";
     document.getElementById("formTitle").textContent = "タスクを編集";
     document.getElementById("submitBtn").textContent = "更新";
@@ -598,7 +602,7 @@ import {
           ? `${task.date} (未完了・持ち越し中)`
           : task.date;
       } else if (task.type === "interval") {
-        meta.textContent = `${task.intervalWeeks}週間ごと・次回 ${task.dueDate}`;
+        meta.textContent = `${task.intervalWeeks}${task.intervalUnit === "days" ? "日" : "週間"}ごと・次回 ${task.dueDate}`;
       } else {
         meta.textContent = task.done ? `完了 (${task.doneDate})` : "いつかやる";
       }
