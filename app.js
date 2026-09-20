@@ -251,9 +251,21 @@ import {
     return state.records[iso];
   }
 
+  // ラベルの登録順で並べ替える(同じラベル内は登録順のまま)。未登録ラベルは末尾。
+  function sortByLabel(tasks) {
+    const rank = (t) => {
+      const i = state.labels.findIndex((l) => l.name === t.label);
+      return i < 0 ? state.labels.length : i;
+    };
+    return tasks
+      .map((t, i) => ({ t, i, r: rank(t) }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .map((x) => x.t);
+  }
+
   function tasksForDate(iso) {
     const dow = isoToDate(iso).getDay();
-    return state.tasks.filter((t) => {
+    return sortByLabel(state.tasks).filter((t) => {
       if (t.type === "weekday") return t.days.includes(dow);
       // 単体タスク: 期日以降は完了するまで毎日持ち越される。完了した当日だけは
       // チェック済みの状態で表示するため doneDate === iso も対象に含める。
@@ -266,7 +278,7 @@ import {
   }
 
   function somedayTasks() {
-    return state.tasks.filter((t) => t.type === "someday" && !t.done);
+    return sortByLabel(state.tasks).filter((t) => t.type === "someday" && !t.done);
   }
 
   // ---------- Tabs ----------
@@ -576,7 +588,7 @@ import {
   function renderManageList() {
     const list = document.getElementById("manageTaskList");
     list.innerHTML = "";
-    state.tasks.forEach((task) => {
+    sortByLabel(state.tasks).forEach((task) => {
       const li = document.createElement("li");
       li.className = "task-item" + (task.done ? " done" : "");
 
