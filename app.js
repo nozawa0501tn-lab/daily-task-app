@@ -57,6 +57,13 @@ import {
     if (!loaded.training || !loaded.training.records) {
       loaded.training = { records: {} };
     }
+    Object.keys(loaded.training.records).forEach((k) => {
+      if (!k.includes("|")) {
+        const rec = loaded.training.records[k];
+        delete loaded.training.records[k];
+        loaded.training.records[`${k}|${rec.sessionId}`] = rec;
+      }
+    });
     if (!Array.isArray(loaded.labels) || loaded.labels.length === 0) {
       loaded.labels = DEFAULT_LABELS.map((l) => ({ ...l }));
     }
@@ -687,13 +694,25 @@ import {
     return trainingProgram.schedule.find((s) => DAY_TO_DOW[s.day] === dow) || null;
   }
 
+  const openTrainingSessions = new Set();
+
+  function trainingKey(iso, session) {
+    return `${iso}|${session.id}`;
+  }
+
+  function trainingCompleted(iso, session) {
+    const rec = state.training.records[trainingKey(iso, session)];
+    const items = trainingItems(session);
+    return rec ? rec.completed.filter((id) => items.some((i) => i.id === id)) : [];
+  }
+
   function toggleTrainingItem(session, itemId) {
-    const iso = todayISO();
     const records = state.training.records;
-    if (!records[iso]) {
-      records[iso] = { sessionId: session.id, completed: [], total: trainingItems(session).length };
+    const key = trainingKey(todayISO(), session);
+    if (!records[key]) {
+      records[key] = { sessionId: session.id, completed: [], total: trainingItems(session).length };
     }
-    const rec = records[iso];
+    const rec = records[key];
     const idx = rec.completed.indexOf(itemId);
     if (idx >= 0) rec.completed.splice(idx, 1);
     else rec.completed.push(itemId);
@@ -715,8 +734,7 @@ import {
 
     if (session) {
       const items = trainingItems(session);
-      const rec = state.training.records[iso];
-      const completed = rec ? rec.completed.filter((id) => items.some((i) => i.id === id)) : [];
+      const completed = trainingCompleted(iso, session);
       document.getElementById("trainingTodayTitle").textContent =
         `今日のメニュー: ${session.day} ${session.time} ${session.title}`;
       items.forEach((item) => {
@@ -766,21 +784,44 @@ import {
     const week = document.getElementById("trainingWeek");
     week.innerHTML = "";
     trainingProgram.schedule.forEach((s) => {
+      const sItems = trainingItems(s);
+      const sDone = trainingCompleted(iso, s);
       const d = document.createElement("details");
       d.className = "week-session" + (session && session.id === s.id ? " today" : "");
+      d.open = openTrainingSessions.has(s.id);
+      d.addEventListener("toggle", () => {
+        if (d.open) openTrainingSessions.add(s.id);
+        else openTrainingSessions.delete(s.id);
+      });
       const sum = document.createElement("summary");
-      sum.textContent = `${s.day} ${s.time} ─ ${s.title}` + (session && session.id === s.id ? " (今日)" : "");
+      sum.textContent =
+        `${s.day} ${s.time} ─ ${s.title}` +
+        (session && session.id === s.id ? " (今日)" : "") +
+        `　${sDone.length}/${sItems.length}` +
+        (sDone.length === sItems.length ? " ✓完了" : "");
       d.appendChild(sum);
       const ul = document.createElement("ul");
-      trainingItems(s).forEach((item) => {
+      sItems.forEach((item) => {
+        const checked = sDone.includes(item.id);
         const li = document.createElement("li");
+        li.className = "week-item" + (checked ? " done" : "");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "task-checkbox";
+        cb.checked = checked;
+        cb.addEventListener("change", () => toggleTrainingItem(s, item.id));
+        li.appendChild(cb);
+        const text = document.createElement("div");
+        text.className = "task-text";
         const n = document.createElement("span");
+        n.className = "task-name";
         n.textContent = item.name;
         const sb = document.createElement("span");
         sb.className = "task-sub";
         sb.textContent = item.sub;
-        li.appendChild(n);
-        li.appendChild(sb);
+        text.appendChild(n);
+        text.appendChild(sb);
+        li.appendChild(text);
         ul.appendChild(li);
       });
       d.appendChild(ul);
@@ -791,8 +832,9 @@ import {
     tbody.innerHTML = "";
     Object.keys(state.training.records)
       .sort((a, b) => (a < b ? 1 : -1))
-      .forEach((date) => {
-        const rec = state.training.records[date];
+      .forEach((key) => {
+        const date = key.split("|")[0];
+        const rec = state.training.records[key];
         const s = trainingProgram.schedule.find((x) => x.id === rec.sessionId);
         const tr = document.createElement("tr");
         const pct = rec.total === 0 ? 0 : Math.round((rec.completed.length / rec.total) * 100);

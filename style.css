@@ -544,9 +544,15 @@ main{
 }
 .week-session li{
   display:flex;
-  flex-direction:column;
-  gap:2px;
+  align-items:center;
+  gap:10px;
   font-size:0.9rem;
+}
+.week-session li.done{
+  opacity:0.55;
+}
+.week-session li.done .task-name{
+  text-decoration:line-through;
 }
 .grade-pill{
   display:inline-block;
