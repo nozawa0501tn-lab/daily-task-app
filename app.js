@@ -1,4 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
+import { trainingProgram } from "./training-data.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
   getAuth,
@@ -53,6 +54,9 @@ import {
   // Ensures state.labels exists and contains every label already used by a task
   // (covers backups/state saved before label management existed).
   function normalizeState(loaded) {
+    if (!loaded.training || !loaded.training.records) {
+      loaded.training = { records: {} };
+    }
     if (!Array.isArray(loaded.labels) || loaded.labels.length === 0) {
       loaded.labels = DEFAULT_LABELS.map((l) => ({ ...l }));
     }
@@ -155,6 +159,7 @@ import {
             renderManageList();
             renderToday();
             renderHistory();
+            renderTraining();
             applyingRemoteUpdate = false;
           } else {
             // 初回ログイン: ローカルの状態をクラウドの初期データとして保存する
@@ -269,6 +274,7 @@ import {
         renderManageList();
       }
       if (btn.dataset.tab === "history") renderHistory();
+      if (btn.dataset.tab === "training") renderTraining();
     });
   });
 
@@ -663,6 +669,143 @@ import {
     document.getElementById("historyEmptyMsg").hidden = tbody.children.length > 0;
   }
 
+  // ---------- Training tab ----------
+  const DAY_TO_DOW = { "日曜": 0, "月曜": 1, "火曜": 2, "水曜": 3, "木曜": 4, "金曜": 5, "土曜": 6 };
+
+  function trainingItems(session) {
+    const w = session.warmup;
+    const items = [{ id: `${session.id}-warmup`, name: `ウォームアップ: ${w.type}`, sub: `${w.duration}${w.unit}` }];
+    session.exercises.forEach((ex) => {
+      items.push({ id: ex.id, name: ex.name, sub: `${ex.sets}セット × ${ex.reps}回 ／ 休憩 ${ex.rest}秒` });
+    });
+    return items;
+  }
+
+  function sessionForDate(iso) {
+    if (iso < trainingProgram.startDate) return null;
+    const dow = isoToDate(iso).getDay();
+    return trainingProgram.schedule.find((s) => DAY_TO_DOW[s.day] === dow) || null;
+  }
+
+  function toggleTrainingItem(session, itemId) {
+    const iso = todayISO();
+    const records = state.training.records;
+    if (!records[iso]) {
+      records[iso] = { sessionId: session.id, completed: [], total: trainingItems(session).length };
+    }
+    const rec = records[iso];
+    const idx = rec.completed.indexOf(itemId);
+    if (idx >= 0) rec.completed.splice(idx, 1);
+    else rec.completed.push(itemId);
+    saveState();
+    renderTraining();
+  }
+
+  function renderTraining() {
+    const iso = todayISO();
+    document.getElementById("trainingProgramName").textContent = trainingProgram.name;
+    document.getElementById("trainingProgramInfo").textContent =
+      `${trainingProgram.gym} ・ 開始日 ${trainingProgram.startDate}`;
+
+    const session = sessionForDate(iso);
+    const list = document.getElementById("trainingTodayList");
+    const progress = document.getElementById("trainingProgress");
+    const restMsg = document.getElementById("trainingRestMsg");
+    list.innerHTML = "";
+
+    if (session) {
+      const items = trainingItems(session);
+      const rec = state.training.records[iso];
+      const completed = rec ? rec.completed.filter((id) => items.some((i) => i.id === id)) : [];
+      document.getElementById("trainingTodayTitle").textContent =
+        `今日のメニュー: ${session.day} ${session.time} ${session.title}`;
+      items.forEach((item) => {
+        const checked = completed.includes(item.id);
+        const li = document.createElement("li");
+        li.className = "task-item" + (checked ? " done" : "");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "task-checkbox";
+        cb.checked = checked;
+        cb.addEventListener("change", () => toggleTrainingItem(session, item.id));
+        li.appendChild(cb);
+        const text = document.createElement("div");
+        text.className = "task-text";
+        const name = document.createElement("span");
+        name.className = "task-name";
+        name.textContent = item.name;
+        const sub = document.createElement("span");
+        sub.className = "task-sub";
+        sub.textContent = item.sub;
+        text.appendChild(name);
+        text.appendChild(sub);
+        li.appendChild(text);
+        list.appendChild(li);
+      });
+      const pct = Math.round((completed.length / items.length) * 100);
+      document.getElementById("trainingProgressFill").style.width = pct + "%";
+      document.getElementById("trainingProgressText").textContent = `${completed.length} / ${items.length} 完了 (${pct}%)`;
+      progress.hidden = false;
+      restMsg.hidden = true;
+    } else {
+      document.getElementById("trainingTodayTitle").textContent = "今日のメニュー";
+      progress.hidden = true;
+      let next = null;
+      for (let i = 1; i <= 14 && !next; i++) {
+        const d = addDaysISO(iso, i);
+        const s = sessionForDate(d);
+        if (s) next = { date: d, session: s };
+      }
+      const before = iso < trainingProgram.startDate ? "(開始前) " : "";
+      restMsg.textContent = next
+        ? `${before}今日は筋トレの予定がありません。次回: ${next.date} ${next.session.day} ${next.session.title}`
+        : `${before}今日は筋トレの予定がありません。`;
+      restMsg.hidden = false;
+    }
+
+    const week = document.getElementById("trainingWeek");
+    week.innerHTML = "";
+    trainingProgram.schedule.forEach((s) => {
+      const d = document.createElement("details");
+      d.className = "week-session" + (session && session.id === s.id ? " today" : "");
+      const sum = document.createElement("summary");
+      sum.textContent = `${s.day} ${s.time} ─ ${s.title}` + (session && session.id === s.id ? " (今日)" : "");
+      d.appendChild(sum);
+      const ul = document.createElement("ul");
+      trainingItems(s).forEach((item) => {
+        const li = document.createElement("li");
+        const n = document.createElement("span");
+        n.textContent = item.name;
+        const sb = document.createElement("span");
+        sb.className = "task-sub";
+        sb.textContent = item.sub;
+        li.appendChild(n);
+        li.appendChild(sb);
+        ul.appendChild(li);
+      });
+      d.appendChild(ul);
+      week.appendChild(d);
+    });
+
+    const tbody = document.getElementById("trainingHistoryBody");
+    tbody.innerHTML = "";
+    Object.keys(state.training.records)
+      .sort((a, b) => (a < b ? 1 : -1))
+      .forEach((date) => {
+        const rec = state.training.records[date];
+        const s = trainingProgram.schedule.find((x) => x.id === rec.sessionId);
+        const tr = document.createElement("tr");
+        const pct = rec.total === 0 ? 0 : Math.round((rec.completed.length / rec.total) * 100);
+        [date, s ? `${s.day} ${s.title}` : "-", `${pct}% (${rec.completed.length}/${rec.total})`].forEach((t) => {
+          const td = document.createElement("td");
+          td.textContent = t;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    document.getElementById("trainingHistoryEmpty").hidden = tbody.children.length > 0;
+  }
+
   // ---------- Backup ----------
   document.getElementById("exportBtn").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -693,6 +836,7 @@ import {
         renderManageList();
         renderToday();
         renderHistory();
+        renderTraining();
       } catch (err) {
         alert("インポートに失敗しました。ファイルの形式を確認してください。");
       }
@@ -705,4 +849,5 @@ import {
   updateFormVisibility();
   renderLabelUI();
   renderToday();
+  renderTraining();
 })();
