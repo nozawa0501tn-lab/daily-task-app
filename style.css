@@ -411,6 +411,22 @@ main{
   line-height:1;
   cursor:pointer;
 }
+.label-order-note{
+  margin:0 0 8px;
+}
+.label-chip button:disabled{
+  opacity:0.3;
+  cursor:default;
+}
+.done-box{
+  margin-top:12px;
+}
+.done-box summary{
+  cursor:pointer;
+  font-size:0.85rem;
+  color:var(--text-muted);
+  margin-bottom:8px;
+}
 #taskLabel{
   padding:9px 10px;
   border:1px solid var(--border);

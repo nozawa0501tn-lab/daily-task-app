@@ -76,6 +76,10 @@
       <h2>今日のタスク</h2>
       <ul class="task-list" id="todayTaskList"></ul>
       <p class="empty-msg" id="todayEmptyMsg" hidden>今日のタスクはありません。「タスク管理」から追加してください。</p>
+      <details class="done-box" id="todayDoneBox" hidden>
+        <summary id="todayDoneSummary"></summary>
+        <ul class="task-list" id="todayDoneList"></ul>
+      </details>
     </div>
 
     <div class="task-section">
@@ -92,6 +96,7 @@
       <input type="text" id="newLabelName" placeholder="新しいラベル名 (例: 読書)" required>
       <button type="submit">ラベルを追加</button>
     </form>
+    <p class="section-note label-order-note">左のラベルほど優先度が高く、タスク表の上に表示されます。「‹ ›」で並び替えできます。</p>
     <ul class="label-chip-list" id="labelChipList"></ul>
 
     <h2 id="formTitle">タスクを追加</h2>

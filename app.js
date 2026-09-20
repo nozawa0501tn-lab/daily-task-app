@@ -312,8 +312,21 @@ import {
     // Today task list
     const list = document.getElementById("todayTaskList");
     list.innerHTML = "";
-    dayTasks.forEach((t) => list.appendChild(renderTaskRow(t, record.completed.includes(t.id), () => toggleTodayTask(t.id))));
-    document.getElementById("todayEmptyMsg").hidden = dayTasks.length > 0;
+    // 完了済みは表から隠し、下の折りたたみ(取り消し用)に移す
+    const pendingTasks = dayTasks.filter((t) => !record.completed.includes(t.id));
+    const doneTasks = dayTasks.filter((t) => record.completed.includes(t.id));
+    pendingTasks.forEach((t) => list.appendChild(renderTaskRow(t, false, () => toggleTodayTask(t.id))));
+    const emptyMsg = document.getElementById("todayEmptyMsg");
+    emptyMsg.textContent = dayTasks.length === 0
+      ? "今日のタスクはありません。「タスク管理」から追加してください。"
+      : "今日のタスクはすべて完了しました。";
+    emptyMsg.hidden = pendingTasks.length > 0;
+    const doneBox = document.getElementById("todayDoneBox");
+    const doneList = document.getElementById("todayDoneList");
+    doneList.innerHTML = "";
+    doneTasks.forEach((t) => doneList.appendChild(renderTaskRow(t, true, () => toggleTodayTask(t.id))));
+    document.getElementById("todayDoneSummary").textContent = `完了済み (${doneTasks.length})`;
+    doneBox.hidden = doneTasks.length === 0;
 
     // Someday task list
     const sList = document.getElementById("somedayTaskList");
@@ -423,16 +436,35 @@ import {
     }
   });
 
+  function moveLabel(idx, dir) {
+    const j = idx + dir;
+    if (j < 0 || j >= state.labels.length) return;
+    [state.labels[idx], state.labels[j]] = [state.labels[j], state.labels[idx]];
+    saveState();
+    renderLabelUI();
+    renderManageList();
+    renderToday();
+  }
+
   function renderLabelUI() {
     const chipList = document.getElementById("labelChipList");
     chipList.innerHTML = "";
-    state.labels.forEach((l) => {
+    state.labels.forEach((l, idx) => {
       const li = document.createElement("li");
       li.className = "label-chip";
       li.style.background = l.color;
       const span = document.createElement("span");
       span.textContent = l.name;
       li.appendChild(span);
+      [["‹", -1, "優先度を上げる(左へ)"], ["›", 1, "優先度を下げる(右へ)"]].forEach(([text, dir, title]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = text;
+        b.title = title;
+        b.disabled = idx + dir < 0 || idx + dir >= state.labels.length;
+        b.addEventListener("click", () => moveLabel(idx, dir));
+        li.appendChild(b);
+      });
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.textContent = "×";
