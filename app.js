@@ -512,11 +512,13 @@ import {
     e.preventDefault();
     const name = document.getElementById("taskName").value.trim();
     const label = document.getElementById("taskLabel").value.trim();
-    const type = taskForm.querySelector('input[name="taskType"]:checked').value;
+    const selectedType = taskForm.querySelector('input[name="taskType"]:checked').value;
+    // 「当日」は今日の日付を持つ単体タスクとして登録する(未完了なら翌日以降に持ち越し)
+    const type = selectedType === "today" ? "date" : selectedType;
     if (!name || !label) return;
 
     let days = [];
-    let date = "";
+    let date = selectedType === "today" ? todayISO() : "";
     let intervalWeeks = null; // 間隔の数値(単位は intervalUnit。保存データ互換のため名前は据え置き)
     let intervalUnit = "weeks";
     let dueDate = "";
@@ -526,7 +528,7 @@ import {
         alert("曜日を1つ以上選択してください。");
         return;
       }
-    } else if (type === "date") {
+    } else if (selectedType === "date") {
       date = document.getElementById("taskDate").value;
       if (!date) {
         alert("日付を選択してください。");
