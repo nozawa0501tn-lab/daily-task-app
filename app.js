@@ -30,6 +30,8 @@ import {
     "#14b8a6", "#ef4444", "#eab308", "#6366f1", "#06b6d4"
   ];
   const RING_CIRCUMFERENCE = 326.7256;
+  const TRAINING_VERSION = 2;
+  let trainingMigrated = false;
 
   /** @type {{tasks: Array, records: Object, labels: Array}} */
   let state = loadState();
@@ -56,6 +58,11 @@ import {
   function normalizeState(loaded) {
     if (!loaded.training || !loaded.training.records) {
       loaded.training = { records: {} };
+    }
+    // メニューを全面入れ替えした版(2)より前の記録は、旧メニューの種目IDと衝突するため一度だけ消去する
+    if (loaded.training.programVersion !== TRAINING_VERSION) {
+      loaded.training = { records: {}, programVersion: TRAINING_VERSION };
+      trainingMigrated = true;
     }
     Object.keys(loaded.training.records).forEach((k) => {
       if (!k.includes("|")) {
@@ -168,6 +175,10 @@ import {
             renderHistory();
             renderTraining();
             applyingRemoteUpdate = false;
+            if (trainingMigrated) {
+              trainingMigrated = false;
+              saveState();
+            }
           } else {
             // 初回ログイン: ローカルの状態をクラウドの初期データとして保存する
             setDoc(userDocRef, state);
