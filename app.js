@@ -775,6 +775,7 @@ import {
       records[key] = { sessionId: session.id, completed: [], total: trainingItems(session).length };
     }
     const rec = records[key];
+    rec.total = trainingItems(session).length;
     const idx = rec.completed.indexOf(itemId);
     if (idx >= 0) rec.completed.splice(idx, 1);
     else rec.completed.push(itemId);
