@@ -733,7 +733,8 @@ import {
     const w = session.warmup;
     const items = [{ id: `${session.id}-warmup`, name: `ウォームアップ: ${w.type}`, sub: `${w.duration}${w.unit}` }];
     session.exercises.forEach((ex) => {
-      items.push({ id: ex.id, name: ex.name, sub: `${ex.sets}セット × ${ex.reps}回 ／ 休憩 ${ex.rest}秒` });
+      const sub = ex.duration ? ex.duration : `${ex.sets}セット × ${ex.reps}回 ／ 休憩 ${ex.rest}`;
+      items.push({ id: ex.id, name: ex.name, sub });
     });
     return items;
   }
@@ -876,6 +877,14 @@ import {
       });
       d.appendChild(ul);
       week.appendChild(d);
+    });
+
+    const notes = document.getElementById("trainingNotes");
+    notes.innerHTML = "";
+    (trainingProgram.notes || []).forEach((n) => {
+      const li = document.createElement("li");
+      li.textContent = n;
+      notes.appendChild(li);
     });
 
     const tbody = document.getElementById("trainingHistoryBody");
