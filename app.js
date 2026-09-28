@@ -65,13 +65,6 @@ import {
       trainingMigrated = true;
     }
     if (!loaded.training.weights) loaded.training.weights = {};
-    Object.keys(loaded.training.records).forEach((k) => {
-      if (!k.includes("|")) {
-        const rec = loaded.training.records[k];
-        delete loaded.training.records[k];
-        loaded.training.records[`${k}|${rec.sessionId}`] = rec;
-      }
-    });
     if (!Array.isArray(loaded.labels) || loaded.labels.length === 0) {
       loaded.labels = DEFAULT_LABELS.map((l) => ({ ...l }));
     }
@@ -219,10 +212,6 @@ import {
     const d = isoToDate(iso);
     d.setDate(d.getDate() + days);
     return dateToISO(d);
-  }
-
-  function addWeeksISO(iso, weeks) {
-    return addDaysISO(iso, weeks * 7);
   }
 
   function labelColor(labelName) {
