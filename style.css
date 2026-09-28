@@ -516,6 +516,24 @@ main{
   font-size:0.8rem;
   color:var(--text-muted);
 }
+.weight-box{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  font-size:0.8rem;
+  color:var(--text-muted);
+  white-space:nowrap;
+}
+.weight-input{
+  width:68px;
+  padding:6px 8px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--bg);
+  color:var(--text);
+  font-size:0.9rem;
+  text-align:right;
+}
 .training-progress{
   margin-bottom:12px;
 }

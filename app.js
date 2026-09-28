@@ -64,6 +64,7 @@ import {
       loaded.training = { records: {}, programVersion: TRAINING_VERSION };
       trainingMigrated = true;
     }
+    if (!loaded.training.weights) loaded.training.weights = {};
     Object.keys(loaded.training.records).forEach((k) => {
       if (!k.includes("|")) {
         const rec = loaded.training.records[k];
@@ -741,13 +742,42 @@ import {
   const DAY_TO_DOW = { "日曜": 0, "月曜": 1, "火曜": 2, "水曜": 3, "木曜": 4, "金曜": 5, "土曜": 6 };
 
   function trainingItems(session) {
-    const w = session.warmup;
-    const items = [{ id: `${session.id}-warmup`, name: `ウォームアップ: ${w.type}`, sub: `${w.duration}${w.unit}` }];
-    session.exercises.forEach((ex) => {
-      const sub = ex.duration ? ex.duration : `${ex.sets}セット × ${ex.reps}回 ／ 休憩 ${ex.rest}`;
-      items.push({ id: ex.id, name: ex.name, sub });
+    return session.exercises.map((ex) => ({
+      id: ex.id,
+      name: ex.name,
+      sub: `${ex.sets}セット × ${ex.reps}回 ／ 休憩 ${ex.rest}`
+    }));
+  }
+
+  // 重量は種目ID(曜日ごとの枠)ごとに1つだけ保持し、書き換えるまで前回の値を引き継ぐ
+  function weightControl(itemId) {
+    const wrap = document.createElement("label");
+    wrap.className = "weight-box";
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "0.5";
+    input.inputMode = "decimal";
+    input.className = "weight-input";
+    input.placeholder = "重量";
+    input.dataset.weightId = itemId;
+    const w = state.training.weights[itemId];
+    input.value = w === undefined ? "" : w;
+    input.addEventListener("change", () => setTrainingWeight(itemId, input.value));
+    wrap.appendChild(input);
+    wrap.appendChild(document.createTextNode(" kg"));
+    return wrap;
+  }
+
+  function setTrainingWeight(itemId, raw) {
+    const v = raw === "" ? NaN : Number(raw);
+    if (Number.isFinite(v) && v >= 0) state.training.weights[itemId] = v;
+    else delete state.training.weights[itemId];
+    saveState();
+    const current = state.training.weights[itemId];
+    document.querySelectorAll(`input[data-weight-id="${itemId}"]`).forEach((el) => {
+      el.value = current === undefined ? "" : current;
     });
-    return items;
   }
 
   function sessionForDate(iso) {
@@ -821,6 +851,7 @@ import {
         text.appendChild(name);
         text.appendChild(sub);
         li.appendChild(text);
+        li.appendChild(weightControl(item.id));
         list.appendChild(li);
       });
       const pct = Math.round((completed.length / items.length) * 100);
@@ -885,6 +916,7 @@ import {
         text.appendChild(n);
         text.appendChild(sb);
         li.appendChild(text);
+        li.appendChild(weightControl(item.id));
         ul.appendChild(li);
       });
       d.appendChild(ul);
@@ -908,8 +940,12 @@ import {
         const rec = state.training.records[key];
         const s = trainingProgram.schedule.find((x) => x.id === rec.sessionId);
         const tr = document.createElement("tr");
-        const pct = rec.total === 0 ? 0 : Math.round((rec.completed.length / rec.total) * 100);
-        [date, s ? `${s.day} ${s.title}` : "-", `${pct}% (${rec.completed.length}/${rec.total})`].forEach((t) => {
+        // メニュー変更後も実態に合うよう、現在のメニューの種目で数え直す
+        const items = s ? trainingItems(s) : [];
+        const total = s ? items.length : rec.total;
+        const done = s ? rec.completed.filter((id) => items.some((i) => i.id === id)).length : rec.completed.length;
+        const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+        [date, s ? `${s.day} ${s.title}` : "-", `${pct}% (${done}/${total})`].forEach((t) => {
           const td = document.createElement("td");
           td.textContent = t;
           tr.appendChild(td);
